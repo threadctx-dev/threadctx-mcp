@@ -1,6 +1,7 @@
 {
   "name": "threadctx-mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
+  "mcpName": "io.github.threadctx-dev/threadctx-mcp",
   "description": "Shared memory MCP server for AI coding agents. Local-only by default; point it at threadctx.dev (or your own deployment) to share memory across your team.",
   "type": "module",
   "bin": {
