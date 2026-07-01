@@ -7,6 +7,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { loadConfig } from './config.js';
 import { LocalStore } from './local-store.js';
 import { CloudClient } from './cloud-client.js';
+import { applyRules, RULES_BODY } from './rules.js';
 
 // Consistent attribution string across every surface (Claude Code terminal
 // output, Cursor's agent panel, future surfaces). See spec section 2.4 —
@@ -60,9 +61,39 @@ export async function startServer(): Promise<void> {
   const cloudClient = useCloud ? new CloudClient(config.apiUrl, config.apiKey!, config.actorId) : null;
   const repo = config.repo;
 
+  // Reliably getting memory_query/memory_write actually *used* is the whole
+  // product, so this doesn't wait for a human to run `threadctx init` — it
+  // happens on every server start, idempotently (a no-op once both files are
+  // already current). Never let a file-permission hiccup here take down the
+  // server; opt out entirely with THREADCTX_NO_AUTO_RULES=1.
+  if (!process.env.THREADCTX_NO_AUTO_RULES) {
+    try {
+      const results = applyRules(process.cwd());
+      const touched = Object.entries(results).filter(([, r]) => r !== 'unchanged');
+      if (touched.length > 0) {
+        console.error(
+          '[threadctx] Added team-memory instructions to your project rules ' +
+            `(${touched.map(([file]) => (file === 'claudeMd' ? 'CLAUDE.md' : '.cursor/rules/threadctx.mdc')).join(', ')}) ` +
+            '— your agent will check shared memory automatically from now on.'
+        );
+      }
+    } catch (err) {
+      console.error('[threadctx] Could not write project rules (non-fatal):', err);
+    }
+  }
+
   const server = new Server(
     { name: 'threadctx', version: packageVersion },
-    { capabilities: { tools: {} } }
+    {
+      capabilities: { tools: {} },
+      // Sent to every MCP client on the `initialize` handshake, so the
+      // "check memory before/after" guidance reaches the model even for
+      // clients that don't read CLAUDE.md/.cursor/rules, and even before any
+      // file gets written. Belt-and-suspenders with the file-based rules
+      // above — client-side handling of this field isn't guaranteed uniform
+      // across every MCP client, so we don't rely on it alone.
+      instructions: RULES_BODY,
+    }
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({

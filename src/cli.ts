@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadConfig } from './config.js';
 import { LocalStore, type StoredMemory } from './local-store.js';
+import { applyRules } from './rules.js';
 import { startServer } from './server.js';
 
 const [, , command, ...rest] = process.argv;
@@ -19,58 +20,6 @@ function parseFlags(args: string[]): Record<string, string | boolean> {
     if (bare) flags[bare[1]] = true;
   }
   return flags;
-}
-
-// The exact instruction block we drop into an agent's project rules. MCP is
-// pull-based — the model only calls memory_query/memory_write if something tells
-// it to — so this is the single highest-leverage thing for making the memory
-// actually get read. Fenced by markers so re-running `init` updates in place
-// instead of appending duplicates.
-const RULES_START = '<!-- threadctx:start (managed — edit above/below, not between) -->';
-const RULES_END = '<!-- threadctx:end -->';
-const RULES_BODY = [
-  '## Team memory (threadctx)',
-  '',
-  '- **Before** starting any non-trivial task, call `memory_query` with a short',
-  '  description of what you are about to do. Check for prior decisions, fixes,',
-  '  and gotchas on this repo before writing code — not after.',
-  '- **After** resolving a non-obvious bug, making an architectural decision, or',
-  '  learning something that would save a teammate time, call `memory_write` to',
-  '  save it. Write it so a future reader has full context.',
-].join('\n');
-
-/**
- * Insert (or refresh) the threadctx rules block in a project rules file,
- * idempotently. Creates the file if missing. Returns what happened so the
- * caller can report it honestly.
- */
-function upsertRulesBlock(filePath: string): 'created' | 'updated' | 'unchanged' {
-  const block = `${RULES_START}\n${RULES_BODY}\n${RULES_END}\n`;
-
-  if (!existsSync(filePath)) {
-    writeFileSync(filePath, block);
-    return 'created';
-  }
-
-  const existing = readFileSync(filePath, 'utf-8');
-  const startIdx = existing.indexOf(RULES_START);
-
-  if (startIdx !== -1) {
-    const endIdx = existing.indexOf(RULES_END, startIdx);
-    if (endIdx !== -1) {
-      const before = existing.slice(0, startIdx);
-      const after = existing.slice(endIdx + RULES_END.length);
-      const next = `${before}${block.trimEnd()}${after}`;
-      if (next === existing) return 'unchanged';
-      writeFileSync(filePath, next);
-      return 'updated';
-    }
-  }
-
-  // No managed block yet — append one, keeping the user's existing content.
-  const sep = existing.endsWith('\n') ? '\n' : '\n\n';
-  writeFileSync(filePath, `${existing}${sep}${block}`);
-  return 'updated';
 }
 
 function runInit(args: string[]): void {
@@ -98,14 +47,17 @@ function runInit(args: string[]): void {
   console.log(`✅ Wrote ${configPath} (mode: ${mode}) — safe to commit, contains no secret.`);
 
   // Drop the "always check team memory" instruction into the agent's project
-  // rules so the tools actually get used. Opt out with --no-rules.
+  // rules so the tools actually get used, even for clients that don't surface
+  // MCP's `initialize.instructions` prominently. Opt out with --no-rules. The
+  // server also does this automatically on every start (see server.ts) — this
+  // just lets you trigger it explicitly and see the result immediately.
   if (flags['no-rules'] !== true) {
-    for (const rulesFile of ['CLAUDE.md', '.cursorrules']) {
-      const rulesPath = join(process.cwd(), rulesFile);
-      const result = upsertRulesBlock(rulesPath);
-      const verb = result === 'created' ? 'Created' : result === 'updated' ? 'Updated' : 'Already current in';
-      console.log(`✅ ${verb} ${rulesFile} — tells your agent to check team memory each task.`);
-    }
+    const results = applyRules(process.cwd());
+    const describe = (r: string) => (r === 'created' ? 'Created' : r === 'updated' ? 'Updated' : 'Already current in');
+    console.log(`✅ ${describe(results.claudeMd)} CLAUDE.md — tells Claude Code to check team memory each task.`);
+    console.log(
+      `✅ ${describe(results.cursorRule)} .cursor/rules/threadctx.mdc — tells Cursor to check team memory each task.`
+    );
   }
   console.log('');
 

@@ -18,7 +18,10 @@ const env = {
   THREADCTX_DB_PATH: join(dbDir, 'local.json'),
 };
 
-const child = spawn('node', [cli], { env, stdio: ['pipe', 'pipe', 'inherit'] });
+// cwd is the same throwaway tmpdir as THREADCTX_DB_PATH — without this, the
+// server's auto rules-injection (see rules.ts) would write CLAUDE.md and
+// .cursor/rules/ into wherever `npm test` happens to be run from.
+const child = spawn('node', [cli], { env, cwd: dbDir, stdio: ['pipe', 'pipe', 'inherit'] });
 
 let buf = '';
 const pending = new Map();
