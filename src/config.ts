@@ -1,6 +1,7 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { execSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 
 export interface ThreadctxConfig {
@@ -9,6 +10,7 @@ export interface ThreadctxConfig {
   apiUrl: string;
   repo: string;
   dbPath: string;
+  actorId: string;
 }
 
 const DEFAULT_API_URL = 'https://threadctx.dev/api/v1';
@@ -55,6 +57,31 @@ function detectRepoName(): string {
   }
 }
 
+/**
+ * A stable, anonymous per-developer id used only for seat accounting in cloud
+ * mode (distinct-actor counting vs. purchased seats). It's a random UUID
+ * persisted once at ~/.threadctx/actor — no email, no machine fingerprint, no
+ * PII. Can be overridden with THREADCTX_ACTOR_ID (e.g. to pin per-CI identities).
+ */
+function resolveActorId(dbPath: string): string {
+  if (process.env.THREADCTX_ACTOR_ID) return process.env.THREADCTX_ACTOR_ID;
+  const actorPath = join(dirname(dbPath), 'actor');
+  try {
+    if (existsSync(actorPath)) {
+      const existing = readFileSync(actorPath, 'utf-8').trim();
+      if (existing) return existing;
+    }
+    const id = randomUUID();
+    mkdirSync(dirname(actorPath), { recursive: true });
+    writeFileSync(actorPath, id, 'utf-8');
+    return id;
+  } catch {
+    // If disk isn't writable, fall back to an ephemeral id — seat counts will
+    // be slightly inflated for this session, which is acceptable and safe.
+    return randomUUID();
+  }
+}
+
 export function loadConfig(): ThreadctxConfig {
   const fileConfig = readFileConfig();
 
@@ -64,11 +91,14 @@ export function loadConfig(): ThreadctxConfig {
     fileConfig.mode ??
     (apiKey ? 'cloud' : 'local');
 
+  const dbPath = process.env.THREADCTX_DB_PATH ?? join(os.homedir(), '.threadctx', 'local.json');
+
   return {
     mode,
     apiKey,
     apiUrl: process.env.THREADCTX_API_URL ?? fileConfig.apiUrl ?? DEFAULT_API_URL,
     repo: process.env.THREADCTX_REPO ?? fileConfig.repo ?? detectRepoName(),
-    dbPath: process.env.THREADCTX_DB_PATH ?? join(os.homedir(), '.threadctx', 'local.json'),
+    dbPath,
+    actorId: resolveActorId(dbPath),
   };
 }

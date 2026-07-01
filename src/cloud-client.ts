@@ -17,16 +17,21 @@ export interface CloudQueryResponse {
 export class CloudClient {
   constructor(
     private apiUrl: string,
-    private apiKey: string
+    private apiKey: string,
+    private actorId?: string
   ) {}
 
   private async request<T>(path: string, body: unknown): Promise<T> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${this.apiKey}`,
+    };
+    // Anonymous per-developer id for seat accounting (see config.resolveActorId).
+    if (this.actorId) headers['X-Threadctx-Actor'] = this.actorId;
+
     const res = await fetch(`${this.apiUrl}${path}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.apiKey}`,
-      },
+      headers,
       body: JSON.stringify(body),
     });
 

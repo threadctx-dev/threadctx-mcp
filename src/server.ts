@@ -22,7 +22,7 @@ export async function startServer(): Promise<void> {
 
   const useCloud = config.mode === 'cloud' && Boolean(config.apiKey);
   const localStore = useCloud ? null : new LocalStore(config.dbPath);
-  const cloudClient = useCloud ? new CloudClient(config.apiUrl, config.apiKey!) : null;
+  const cloudClient = useCloud ? new CloudClient(config.apiUrl, config.apiKey!, config.actorId) : null;
   const repo = config.repo;
 
   const server = new Server(
