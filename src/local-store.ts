@@ -10,7 +10,7 @@ export interface LocalMemory {
   score: number;
 }
 
-interface StoredMemory {
+export interface StoredMemory {
   id: string;
   repo: string;
   content: string;
@@ -72,6 +72,18 @@ export class LocalStore {
     });
     this.persist();
     return id;
+  }
+
+  /**
+   * Return stored memories newest-first, optionally scoped to one repo. Used by
+   * the `threadctx list` CLI so a developer can see exactly what their agents
+   * have written to their own machine — no query keywords, no scoring.
+   */
+  list(repo?: string): StoredMemory[] {
+    return this.memories
+      .filter((m) => (repo ? m.repo === repo : true))
+      .slice()
+      .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
   }
 
   query(repo: string, taskDescription: string, maxResults: number): LocalMemory[] {
