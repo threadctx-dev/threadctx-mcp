@@ -1,0 +1,35 @@
+{
+  "name": "threadctx-mcp",
+  "version": "0.1.0",
+  "description": "Shared memory MCP server for AI coding agents. Local-only by default; point it at threadctx.dev (or your own deployment) to share memory across your team.",
+  "type": "module",
+  "bin": {
+    "threadctx": "./dist/cli.js"
+  },
+  "main": "dist/index.js",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/cli.ts",
+    "start": "node dist/cli.js",
+    "test": "npm run build && node test/smoke.mjs",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.4"
+  },
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "license": "MIT",
+  "homepage": "https://threadctx.dev",
+  "repository": { "type": "git", "url": "git+https://github.com/threadctx/threadctx.git", "directory": "mcp-server" },
+  "bugs": { "url": "https://github.com/threadctx/threadctx/issues" },
+  "publishConfig": { "access": "public" },
+  "keywords": ["mcp", "model-context-protocol", "claude-code", "cursor", "ai-agent-memory", "shared-memory", "team-memory"]
+}
