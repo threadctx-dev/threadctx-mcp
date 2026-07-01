@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.threadctx-dev/threadctx-mcp",
-  "description": "Shared memory MCP server for AI coding agents. Local-only by default; point it at threadctx.dev (or your own deployment) to share memory across your team.",
+  "description": "Shared memory MCP server for AI coding agents — local by default, team-shared via threadctx.dev.",
   "repository": {
     "url": "https://github.com/threadctx-dev/threadctx-mcp",
     "source": "github"
