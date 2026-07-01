@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
@@ -10,7 +13,39 @@ import { CloudClient } from './cloud-client.js';
 // the same short string everywhere is what makes the brand legible.
 const attributionFooter = (n: number) => `· via threadctx — shared team memory (${n} hit${n === 1 ? '' : 's'})`;
 
+// package.json sits next to dist/ both in this repo and once installed as a
+// dependency, so this resolves correctly in both dev and published contexts.
+const packageJsonPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json');
+const packageVersion: string = JSON.parse(readFileSync(packageJsonPath, 'utf-8')).version;
+
 export async function startServer(): Promise<void> {
+  console.error('[threadctx] Shared memory MCP server for Claude Code, Cursor, and other MCP clients.');
+  console.error('[threadctx] Setup guide: https://threadctx.dev');
+
+  // A human typing `npx threadctx-mcp` straight into a terminal (rather than
+  // an MCP client spawning it over a pipe) is a very natural thing to try
+  // when kicking the tires — and without this check it just sits there
+  // forever waiting for JSON-RPC input that will never arrive, with zero
+  // explanation. Detect that case and exit with guidance instead of hanging.
+  if (process.stdin.isTTY) {
+    console.error('');
+    console.error("[threadctx] This looks like a terminal, not an MCP client — there's nothing more to do here.");
+    console.error('[threadctx] threadctx only runs as a subprocess that Claude Code / Cursor launch for you.');
+    console.error('[threadctx] Add this to your MCP client config (~/.claude/mcp.json or .cursor/mcp.json):');
+    console.error('');
+    console.error(
+      JSON.stringify(
+        { mcpServers: { threadctx: { command: 'npx', args: ['-y', 'threadctx-mcp'] } } },
+        null,
+        2
+      )
+    );
+    console.error('');
+    console.error('[threadctx] Then restart your agent — it will pick up memory_write / memory_query.');
+    console.error('[threadctx] Full guide: https://threadctx.dev');
+    process.exit(0);
+  }
+
   const config = loadConfig();
 
   if (config.mode === 'cloud' && !config.apiKey) {
@@ -26,7 +61,7 @@ export async function startServer(): Promise<void> {
   const repo = config.repo;
 
   const server = new Server(
-    { name: 'threadctx', version: '0.1.0' },
+    { name: 'threadctx', version: packageVersion },
     { capabilities: { tools: {} } }
   );
 
@@ -128,5 +163,12 @@ export async function startServer(): Promise<void> {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error(`[threadctx] MCP server running in ${useCloud ? 'cloud' : 'local'} mode for repo "${repo}".`);
+
+  const repoSuffix =
+    repo === 'unknown-repo'
+      ? ' (no git remote found in this directory — cd into a repo with one, or set THREADCTX_REPO)'
+      : '';
+  console.error(
+    `[threadctx] MCP server running in ${useCloud ? 'cloud' : 'local'} mode for repo "${repo}"${repoSuffix}.`
+  );
 }
