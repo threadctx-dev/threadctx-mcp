@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { loadConfig } from './config.js';
 import { LocalStore, type StoredMemory } from './local-store.js';
 import { applyRules } from './rules.js';
+import { runCapture } from './capture.js';
 import { startServer } from './server.js';
 
 const [, , command, ...rest] = process.argv;
@@ -52,12 +53,14 @@ function runInit(args: string[]): void {
   // server also does this automatically on every start (see server.ts) — this
   // just lets you trigger it explicitly and see the result immediately.
   if (flags['no-rules'] !== true) {
-    const results = applyRules(process.cwd());
-    const describe = (r: string) => (r === 'created' ? 'Created' : r === 'updated' ? 'Updated' : 'Already current in');
-    console.log(`✅ ${describe(results.claudeMd)} CLAUDE.md — tells Claude Code to check team memory each task.`);
+    const describe = (r: string) => (r === 'created' ? 'Created' : r === 'updated' ? 'Updated' : 'Already current');
+    for (const rule of applyRules(process.cwd())) {
+      console.log(`✅ ${describe(rule.result)}: ${rule.label} — tells your agent to check team memory each task.`);
+    }
     console.log(
-      `✅ ${describe(results.cursorRule)} .cursor/rules/threadctx.mdc — tells Cursor to check team memory each task.`
+      '   (AGENTS.md + CLAUDE.md are always written; Copilot/Windsurf/Cline/Gemini files are added only'
     );
+    console.log('   when that tool is detected in the repo. Opt out entirely with --no-rules.)');
   }
   console.log('');
 
@@ -178,6 +181,21 @@ async function main(): Promise<void> {
 
   if (command === 'list') {
     runList(rest);
+    return;
+  }
+
+  if (command === 'capture') {
+    const flags = parseFlags(rest);
+    const parsedMax = typeof flags.max === 'string' ? parseInt(flags.max, 10) : NaN;
+    await runCapture({
+      since: typeof flags.since === 'string' ? flags.since : undefined,
+      max: Number.isFinite(parsedMax) && parsedMax > 0 ? parsedMax : 30,
+      dryRun: flags['dry-run'] === true,
+      diffs: flags.diffs === true,
+      model: typeof flags.model === 'string' ? flags.model : undefined,
+      force: flags.force === true,
+      printWorkflow: flags['print-workflow'] === true,
+    });
     return;
   }
 

@@ -1,6 +1,6 @@
 {
   "name": "threadctx-mcp",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "mcpName": "io.github.threadctx-dev/threadctx-mcp",
   "description": "Shared memory MCP server for AI coding agents. Local-only by default; point it at threadctx.dev (or your own deployment) to share memory across your team.",
   "type": "module",
@@ -13,7 +13,7 @@
     "build": "tsc -p tsconfig.json",
     "dev": "tsx watch src/cli.ts",
     "start": "node dist/cli.js",
-    "test": "npm run build && node test/smoke.mjs",
+    "test": "npm run build && node test/rules.test.mjs && node test/capture.test.mjs && node test/smoke.mjs",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {

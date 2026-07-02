@@ -68,12 +68,11 @@ export async function startServer(): Promise<void> {
   // server; opt out entirely with THREADCTX_NO_AUTO_RULES=1.
   if (!process.env.THREADCTX_NO_AUTO_RULES) {
     try {
-      const results = applyRules(process.cwd());
-      const touched = Object.entries(results).filter(([, r]) => r !== 'unchanged');
+      const touched = applyRules(process.cwd()).filter((r) => r.result !== 'unchanged');
       if (touched.length > 0) {
         console.error(
           '[threadctx] Added team-memory instructions to your project rules ' +
-            `(${touched.map(([file]) => (file === 'claudeMd' ? 'CLAUDE.md' : '.cursor/rules/threadctx.mdc')).join(', ')}) ` +
+            `(${touched.map((r) => r.label).join(', ')}) ` +
             '— your agent will check shared memory automatically from now on.'
         );
       }

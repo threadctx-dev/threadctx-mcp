@@ -9,6 +9,19 @@ export interface CloudQueryResponse {
   debug?: { num_candidates: number };
 }
 
+export interface CloudMemory {
+  id: string;
+  repo: string;
+  content: string;
+  tags: string[];
+  created_at: string;
+}
+
+export interface CloudListResponse {
+  memories: CloudMemory[];
+  total: number;
+}
+
 /**
  * Thin HTTP client for the threadctx cloud API. Talks to either the
  * hosted threadctx.dev service or a self-hosted deployment (set
@@ -21,17 +34,20 @@ export class CloudClient {
     private actorId?: string
   ) {}
 
-  private async request<T>(path: string, body: unknown): Promise<T> {
+  private authHeaders(): Record<string, string> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${this.apiKey}`,
     };
     // Anonymous per-developer id for seat accounting (see config.resolveActorId).
     if (this.actorId) headers['X-Threadctx-Actor'] = this.actorId;
+    return headers;
+  }
 
+  private async request<T>(path: string, body: unknown): Promise<T> {
     const res = await fetch(`${this.apiUrl}${path}`, {
       method: 'POST',
-      headers,
+      headers: this.authHeaders(),
       body: JSON.stringify(body),
     });
 
@@ -61,5 +77,22 @@ export class CloudClient {
       task_description: taskDescription,
       max_results: maxResults,
     });
+  }
+
+  /**
+   * Most-recent memories for a repo, used by `threadctx capture` to dedup new
+   * extractions against what's already stored. Best-effort: on any error (e.g. an
+   * older server without the list endpoint) it returns [] so capture still runs.
+   */
+  async recent(repo: string, limit = 100): Promise<CloudMemory[]> {
+    try {
+      const url = `${this.apiUrl}/memory/list?repo=${encodeURIComponent(repo)}&limit=${limit}`;
+      const res = await fetch(url, { method: 'GET', headers: this.authHeaders() });
+      if (!res.ok) return [];
+      const json = (await res.json()) as CloudListResponse;
+      return json.memories ?? [];
+    } catch {
+      return [];
+    }
   }
 }

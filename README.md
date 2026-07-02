@@ -1,8 +1,11 @@
 # threadctx-mcp
 
 Shared memory MCP server for AI coding agents. Works identically with
-**Claude Code** and **Cursor** — same package, same config shape, no
-per-client integration work.
+**Claude Code**, **Cursor**, and any MCP client — same package, same config
+shape, no per-client integration work. On first start it also drops a
+"check team memory" instruction into whichever agents' rule files your repo
+uses (`AGENTS.md`, `CLAUDE.md`, Copilot, Windsurf, Cline, Gemini) so the
+memory actually gets read, not just exposed.
 
 ## Modes
 
@@ -22,7 +25,8 @@ per-client integration work.
 
 ```bash
 # Local mode — nothing to configure. Also auto-adds the "check team memory"
-# instruction to CLAUDE.md / .cursor/rules/threadctx.mdc on first start.
+# instruction to your agents' rule files (AGENTS.md, CLAUDE.md, and any
+# detected tool-specific files) on first start.
 npx threadctx-mcp
 
 # Optional: write a committable .threadctx.json config, or re-apply the
@@ -44,12 +48,31 @@ runtime (set it in your MCP client's `env` block, as shown below), so
 secrets stay out of version control by construction.
 
 threadctx also adds a small, clearly-marked instruction to your project
-rules — `CLAUDE.md` for Claude Code, `.cursor/rules/threadctx.mdc` for
-Cursor — telling the agent to call `memory_query` before a task and
-`memory_write` after. **This happens automatically the first time the
-server starts in a project — you don't need to run `init` for it.** Running
-`init` just triggers it explicitly and prints the result; either way it's
-idempotent (safe to re-run, never duplicates). Opt out entirely with
+rules telling the agent to call `memory_query` before a task and
+`memory_write` after. It writes the two universal files every time —
+[`AGENTS.md`](https://agents.md) (the cross-tool standard read by Copilot,
+Cursor, Windsurf, Zed, Codex, Aider, and ~24 others) and `CLAUDE.md`
+(Claude Code's richer native format) — plus `.cursor/rules/threadctx.mdc`.
+It then adds a tool-specific file **only when that tool's footprint is
+detected in the repo**, so it never litters your project with rule files for
+tools you don't use:
+
+| Tool | File written | Written when |
+|---|---|---|
+| Cross-tool standard | `AGENTS.md` | always |
+| Claude Code | `CLAUDE.md` | always |
+| Cursor | `.cursor/rules/threadctx.mdc` | always |
+| GitHub Copilot | `.github/copilot-instructions.md` | `.github/` exists |
+| Windsurf | `.windsurf/rules/threadctx.md` | `.windsurf/` exists |
+| Cline | `.clinerules/threadctx.md` | `.clinerules` exists |
+| Gemini CLI | `GEMINI.md` | `.gemini/` exists |
+
+Shared files (`AGENTS.md`, `CLAUDE.md`, Copilot, Gemini) get a marker-fenced
+block spliced in, preserving your own content around it; dedicated files are
+owned in full. **This happens automatically the first time the server starts
+in a project — you don't need to run `init` for it.** Running `init` just
+triggers it explicitly and prints the result; either way it's idempotent
+(safe to re-run, never duplicates). Opt out entirely with
 `THREADCTX_NO_AUTO_RULES=1`, or per-`init`-call with `--no-rules`.
 
 The same instruction is also sent as part of the MCP `initialize` handshake
@@ -102,6 +125,33 @@ Cursor Settings → Tools & MCP):
 That's it — the same package and config work in both clients because
 MCP is a portable, open protocol.
 
+## Passive capture — turn git history into memory
+
+Memory shouldn't depend on an agent *remembering* to call `memory_write`.
+`threadctx capture` reads the commits landed since its last run, uses **your
+own LLM provider key** to distill the genuinely reusable decisions and
+gotchas (skipping trivial commits), dedups them against what's already
+stored, and writes the survivors. It's tool-agnostic — it doesn't matter
+whether the work happened in Claude Code, Cursor, Copilot, or a plain editor.
+
+```bash
+# Off by default because it calls an LLM (billed to your provider). Enable it:
+export THREADCTX_CAPTURE_ENABLED=1
+export ANTHROPIC_API_KEY=sk-...     # or OPENAI_API_KEY
+
+npx threadctx-mcp capture --dry-run     # preview what it would store
+npx threadctx-mcp capture               # store them (incremental since last run)
+npx threadctx-mcp capture --since=v1.2.0 --diffs   # a range, with patches
+
+# Scaffold a GitHub Action that captures every merged PR automatically:
+npx threadctx-mcp capture --print-workflow > .github/workflows/threadctx-capture.yml
+```
+
+Capture calls your LLM provider directly — nothing is routed through
+threadctx's servers, so local mode keeps its "no network call beyond your own
+LLM provider" promise. It is **off unless `THREADCTX_CAPTURE_ENABLED=1`** (or
+a one-off `--force`), so it can never run up token cost as a side effect.
+
 ## Environment variables
 
 | Variable | Required | Description |
@@ -111,7 +161,11 @@ MCP is a portable, open protocol.
 | `THREADCTX_API_URL` | no | defaults to `https://threadctx.dev/api/v1`; override for self-hosting |
 | `THREADCTX_REPO` | no | overrides repo auto-detection from `git remote` |
 | `THREADCTX_DB_PATH` | no | local-mode store path; defaults to `~/.threadctx/local.json` |
-| `THREADCTX_NO_AUTO_RULES` | no | set to `1` to disable auto-injecting `CLAUDE.md` / `.cursor/rules/threadctx.mdc` on server start |
+| `THREADCTX_NO_AUTO_RULES` | no | set to `1` to disable auto-injecting agent rule files on server start |
+| `THREADCTX_CAPTURE_ENABLED` | for `capture` | set to `1` to enable the LLM-backed `capture` command (off by default) |
+| `THREADCTX_CAPTURE_PROVIDER` | no | force `anthropic` or `openai` when both keys are present |
+| `THREADCTX_CAPTURE_MODEL` | no | override the extraction model (defaults: Haiku / gpt-4o-mini) |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | for `capture` | your own provider key; capture calls it directly |
 
 ## Local development
 
@@ -145,5 +199,10 @@ these three layers together are the strongest guarantee we can build.
 | Command | What it does |
 |---|---|
 | `npx threadctx-mcp` | Runs the MCP server (this is what Claude Code / Cursor launch). Auto-injects project rules on first start in a project. |
-| `npx threadctx-mcp init [--mode=cloud --api-key=…] [--no-rules]` | Writes `.threadctx.json` and explicitly (re-)applies the project-rules block. |
+| `npx threadctx-mcp init [--mode=cloud --api-key=…] [--no-rules]` | Writes `.threadctx.json` and explicitly (re-)applies the project-rules files. |
 | `npx threadctx-mcp list [--all] [--full] [--json]` | Shows what's stored in the local on-disk memory. |
+| `npx threadctx-mcp capture [--dry-run] [--since=<ref>] [--max=N] [--diffs] [--model=ID] [--print-workflow]` | Distills recent git history into memories via your own LLM key. Off unless `THREADCTX_CAPTURE_ENABLED=1` (or `--force`). |
+
+Browse, search, edit, and prune team (cloud) memory in a human dashboard at
+[threadctx.dev/dashboard](https://threadctx.dev/dashboard) — sign in with your
+team API key.
