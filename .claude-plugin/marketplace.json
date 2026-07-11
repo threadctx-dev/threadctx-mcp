@@ -1,0 +1,21 @@
+{
+  "name": "threadctx",
+  "owner": {
+    "name": "threadctx",
+    "email": "founders@threadctx.dev",
+    "url": "https://threadctx.dev"
+  },
+  "metadata": {
+    "description": "Official threadctx plugin marketplace — shared team memory for AI coding agents.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "threadctx",
+      "source": "./",
+      "description": "Shared memory for AI coding agents. Decisions, fixes, and gotchas persist per repo — local by default, shared with your team via threadctx.dev.",
+      "category": "productivity",
+      "keywords": ["memory", "team-memory", "shared-memory", "mcp", "knowledge"]
+    }
+  ]
+}

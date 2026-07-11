@@ -1,0 +1,21 @@
+{
+  "name": "threadctx",
+  "displayName": "threadctx — shared team memory",
+  "description": "Shared memory for AI coding agents. Decisions, fixes, and gotchas persist per repo — local by default, shared with your team via threadctx.dev. What one teammate's agent learns, everyone's agents remember.",
+  "version": "0.4.0",
+  "author": {
+    "name": "threadctx",
+    "email": "founders@threadctx.dev",
+    "url": "https://threadctx.dev"
+  },
+  "homepage": "https://threadctx.dev",
+  "repository": "https://github.com/threadctx-dev/threadctx-mcp",
+  "license": "MIT",
+  "keywords": ["memory", "team-memory", "shared-memory", "mcp", "knowledge"],
+  "mcpServers": {
+    "threadctx": {
+      "command": "npx",
+      "args": ["-y", "threadctx-mcp"]
+    }
+  }
+}
