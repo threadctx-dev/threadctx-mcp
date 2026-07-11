@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadConfig } from './config.js';
 import { LocalStore, type StoredMemory } from './local-store.js';
@@ -21,6 +21,111 @@ function parseFlags(args: string[]): Record<string, string | boolean> {
     if (bare) flags[bare[1]] = true;
   }
   return flags;
+}
+
+// The server entry every client config points at. Deliberately secret-free:
+// in cloud mode the API key comes from the developer's own environment
+// (THREADCTX_API_KEY), so these files are safe to commit — which is the whole
+// point: a committed project MCP config means the NEXT teammate who opens the
+// repo gets prompted by their client to enable threadctx, zero setup.
+const SERVER_ENTRY = { command: 'npx', args: ['-y', 'threadctx-mcp'] };
+
+/**
+ * Merge a `threadctx` entry into a project-level MCP client config file
+ * (`.mcp.json` for Claude Code, `.cursor/mcp.json` for Cursor), creating the
+ * file if missing and never touching other servers or unparseable files.
+ */
+function upsertProjectMcpConfig(filePath: string): 'created' | 'updated' | 'unchanged' | 'skipped' {
+  if (!existsSync(filePath)) {
+    mkdirSync(join(filePath, '..'), { recursive: true });
+    writeFileSync(filePath, JSON.stringify({ mcpServers: { threadctx: SERVER_ENTRY } }, null, 2) + '\n');
+    return 'created';
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(filePath, 'utf-8'));
+    if (typeof parsed !== 'object' || parsed === null) return 'skipped';
+    parsed.mcpServers = parsed.mcpServers ?? {};
+    if (parsed.mcpServers.threadctx) return 'unchanged';
+    parsed.mcpServers.threadctx = SERVER_ENTRY;
+    writeFileSync(filePath, JSON.stringify(parsed, null, 2) + '\n');
+    return 'updated';
+  } catch {
+    // A hand-edited file with a syntax quirk is the user's to fix — never clobber it.
+    return 'skipped';
+  }
+}
+
+/**
+ * Write both committable project MCP configs and report what happened. Shared
+ * by `init` (first teammate) and `join` (every teammate after).
+ */
+function writeProjectMcpConfigs(): void {
+  const targets = [
+    { path: join(process.cwd(), '.mcp.json'), client: 'Claude Code' },
+    { path: join(process.cwd(), '.cursor', 'mcp.json'), client: 'Cursor' },
+  ];
+  for (const t of targets) {
+    const result = upsertProjectMcpConfig(t.path);
+    if (result === 'skipped') {
+      console.log(`⚠️  Could not update ${t.path} (unparseable JSON) — add the threadctx entry by hand.`);
+    } else if (result === 'unchanged') {
+      console.log(`✅ Already configured: ${t.path} (${t.client})`);
+    } else {
+      console.log(`✅ ${result === 'created' ? 'Created' : 'Updated'}: ${t.path} — ${t.client} will offer to enable threadctx. Commit this file.`);
+    }
+  }
+}
+
+/**
+ * `threadctx join` — the second-teammate command. The repo already carries a
+ * committed `.threadctx.json` (put there by whoever ran `init`); this connects
+ * *this* machine to it: project MCP configs for Claude Code/Cursor, refreshed
+ * agent rules, and clear per-client instructions for everything else.
+ */
+function runJoin(): void {
+  const configPath = join(process.cwd(), '.threadctx.json');
+  if (!existsSync(configPath)) {
+    console.log('No .threadctx.json found in this directory — this repo is not set up for threadctx yet.');
+    console.log('To set it up for your whole team (you would be the first):');
+    console.log('  npx threadctx-mcp init                 # local mode, no account needed');
+    console.log('  npx threadctx-mcp init --mode=cloud --api-key=tctx_...   # shared team memory');
+    process.exit(1);
+  }
+
+  let mode = 'local';
+  try {
+    const parsed = JSON.parse(readFileSync(configPath, 'utf-8'));
+    if (parsed?.mode === 'cloud') mode = 'cloud';
+  } catch {
+    console.log(`⚠️  ${configPath} exists but could not be parsed — continuing with local-mode instructions.`);
+  }
+
+  console.log(`Joining this repo's team memory (mode: ${mode}).\n`);
+  writeProjectMcpConfigs();
+
+  const describe = (r: string) => (r === 'created' ? 'Created' : r === 'updated' ? 'Updated' : 'Already current');
+  for (const rule of applyRules(process.cwd())) {
+    console.log(`✅ ${describe(rule.result)}: ${rule.label}`);
+  }
+  console.log('');
+
+  if (mode === 'cloud') {
+    const hasKey = Boolean(process.env.THREADCTX_API_KEY);
+    if (hasKey) {
+      console.log('✅ THREADCTX_API_KEY is set in your environment — cloud mode will connect.');
+    } else {
+      console.log('🔑 One thing left: this team uses cloud (shared) memory, which needs your team API key.');
+      console.log('   Ask whoever set up threadctx here for the key (it starts with tctx_), then add to');
+      console.log('   your shell profile:  export THREADCTX_API_KEY=tctx_...');
+      console.log('   Without it, threadctx still works on this machine in local (private) mode.');
+    }
+    console.log('');
+  }
+
+  console.log('Done. Restart Claude Code / Cursor in this repo — when prompted, enable the');
+  console.log('threadctx MCP server, and your agent will share the team memory from then on.');
+  console.log('Other MCP clients: add this server block to the client config:');
+  console.log(JSON.stringify({ mcpServers: { threadctx: SERVER_ENTRY } }, null, 2));
 }
 
 function runInit(args: string[]): void {
@@ -47,6 +152,11 @@ function runInit(args: string[]): void {
 
   console.log(`✅ Wrote ${configPath} (mode: ${mode}) — safe to commit, contains no secret.`);
 
+  // Committable, secret-free client configs: once these are in the repo, every
+  // teammate who opens it in Claude Code or Cursor gets prompted to enable
+  // threadctx automatically — the join step disappears for the common clients.
+  writeProjectMcpConfigs();
+
   // Drop the "always check team memory" instruction into the agent's project
   // rules so the tools actually get used, even for clients that don't surface
   // MCP's `initialize.instructions` prominently. Opt out with --no-rules. The
@@ -65,30 +175,14 @@ function runInit(args: string[]): void {
   console.log('');
 
   if (mode === 'cloud') {
-    console.log('Add threadctx to your MCP client config (~/.claude/mcp.json and/or .cursor/mcp.json).');
-    console.log('Same block for Claude Code and Cursor:');
+    console.log('🔑 Your API key stays out of every committed file. Put it in your shell profile:');
+    console.log(`   export THREADCTX_API_KEY=${apiKey}`);
+    console.log('   (each teammate does the same with the shared team key)');
     console.log('');
-    console.log(
-      JSON.stringify(
-        {
-          mcpServers: {
-            threadctx: {
-              command: 'npx',
-              args: ['-y', 'threadctx-mcp'],
-              env: { THREADCTX_MODE: 'cloud', THREADCTX_API_KEY: apiKey },
-            },
-          },
-        },
-        null,
-        2
-      )
-    );
-    console.log('');
-    console.log('Keep your API key in that env block (or your shell) — not in .threadctx.json.');
-  } else {
-    console.log('Local mode is ready — just add threadctx to your MCP client config. No key needed.');
-    console.log('See the README for the exact block (identical for Claude Code and Cursor).');
   }
+  console.log('Restart Claude Code / Cursor in this repo and enable threadctx when prompted.');
+  console.log('Commit .threadctx.json, .mcp.json, and .cursor/mcp.json — teammates who open the');
+  console.log('repo get offered threadctx automatically; anyone else runs: npx threadctx-mcp join');
 }
 
 function truncate(text: string, max: number): string {
@@ -176,6 +270,11 @@ function runList(args: string[]): void {
 async function main(): Promise<void> {
   if (command === 'init') {
     runInit(rest);
+    return;
+  }
+
+  if (command === 'join') {
+    runJoin();
     return;
   }
 

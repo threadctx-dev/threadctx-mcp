@@ -29,23 +29,31 @@ memory actually gets read, not just exposed.
 # detected tool-specific files) on first start.
 npx threadctx-mcp
 
-# Optional: write a committable .threadctx.json config, or re-apply the
-# project-rules block explicitly.
+# Set a repo up for your whole team (run once, commit the results)
 npx threadctx-mcp init
 
-# Cloud mode — prints the exact MCP config block to paste
+# Cloud mode — shared team memory via threadctx.dev
 npx threadctx-mcp init --mode=cloud --api-key=tctx_xxx
+
+# Joining a repo a teammate already set up? One command:
+npx threadctx-mcp join
 
 # See what your agents have written to this machine
 npx threadctx-mcp list            # this repo
 npx threadctx-mcp list --all      # every repo
 ```
 
-`init` writes a `.threadctx.json` file (just `{ "mode": "cloud" }`) to the
-current directory. It is safe to commit — it never contains your API key.
-The key is read from the `THREADCTX_API_KEY` environment variable at
-runtime (set it in your MCP client's `env` block, as shown below), so
-secrets stay out of version control by construction.
+`init` writes three committable, secret-free files: `.threadctx.json`
+(just `{ "mode": ... }`), `.mcp.json` (Claude Code project config), and
+`.cursor/mcp.json` (Cursor project config). Commit all three — every
+teammate who then opens the repo in Claude Code or Cursor is prompted to
+enable threadctx automatically, with nothing to install or configure.
+Teammates on other MCP clients run `npx threadctx-mcp join`, which sets up
+their machine the same way and prints the config block for their client.
+
+Your API key never appears in any committed file. It is read from the
+`THREADCTX_API_KEY` environment variable at runtime (export it in your
+shell profile), so secrets stay out of version control by construction.
 
 threadctx also adds a small, clearly-marked instruction to your project
 rules telling the agent to call `memory_query` before a task and
@@ -199,7 +207,8 @@ these three layers together are the strongest guarantee we can build.
 | Command | What it does |
 |---|---|
 | `npx threadctx-mcp` | Runs the MCP server (this is what Claude Code / Cursor launch). Auto-injects project rules on first start in a project. |
-| `npx threadctx-mcp init [--mode=cloud --api-key=…] [--no-rules]` | Writes `.threadctx.json` and explicitly (re-)applies the project-rules files. |
+| `npx threadctx-mcp init [--mode=cloud --api-key=…] [--no-rules]` | Sets a repo up for the team: writes `.threadctx.json`, committable Claude Code/Cursor project MCP configs, and the project-rules files. |
+| `npx threadctx-mcp join` | Joins a repo a teammate already set up: project MCP configs, rules, and per-client instructions. |
 | `npx threadctx-mcp list [--all] [--full] [--json]` | Shows what's stored in the local on-disk memory. |
 | `npx threadctx-mcp capture [--dry-run] [--since=<ref>] [--max=N] [--diffs] [--model=ID] [--print-workflow]` | Distills recent git history into memories via your own LLM key. Off unless `THREADCTX_CAPTURE_ENABLED=1` (or `--force`). |
 

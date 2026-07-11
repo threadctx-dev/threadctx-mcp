@@ -18,6 +18,22 @@ export const RULES_BODY = [
   '  save it. Write it so a future reader has full context.',
 ].join('\n');
 
+// Extra line that only makes sense in the *committed* rules files: a teammate
+// who cloned this repo may open it in an agent that has no threadctx server
+// configured yet. Their agent reads this file, notices the tools are missing,
+// and knows exactly what to suggest — turning every clone of a threadctx-using
+// repo into a guided 30-second join instead of a silently broken instruction.
+// (The MCP `initialize.instructions` copy of the rules omits this line — if a
+// client received it over MCP, the tools are by definition available.)
+export const JOIN_HINT = [
+  '- If the `memory_query` / `memory_write` tools are **not** available in this',
+  '  session: this repo uses threadctx for shared team memory, but it is not',
+  '  connected on this machine yet. Suggest the user run `npx threadctx-mcp join`',
+  '  (one command, ~30 seconds), then restart the session.',
+].join('\n');
+
+export const FILE_RULES_BODY = `${RULES_BODY}\n${JOIN_HINT}`;
+
 const MARKER_START = '<!-- threadctx:start (managed — edit above/below, not between) -->';
 const MARKER_END = '<!-- threadctx:end -->';
 
@@ -27,7 +43,7 @@ export type RuleResult = 'created' | 'updated' | 'unchanged';
 // just this block in and leave the rest of the file alone; for "dedicated" files
 // (ones whose filename is ours) the whole file is this block, optionally under a
 // tool-specific frontmatter header.
-const managedBlock = `${MARKER_START}\n${RULES_BODY}\n${MARKER_END}\n`;
+const managedBlock = `${MARKER_START}\n${FILE_RULES_BODY}\n${MARKER_END}\n`;
 
 /**
  * Insert (or refresh) the threadctx rules block in a shared, general-purpose
