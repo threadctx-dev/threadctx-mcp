@@ -1,5 +1,7 @@
 # threadctx-mcp
 
+[![smithery badge](https://smithery.ai/badge/oneprofile-dev/threadctx)](https://smithery.ai/servers/oneprofile-dev/threadctx)
+
 Shared memory MCP server for AI coding agents. Works identically with
 **Claude Code**, **Cursor**, and any MCP client — same package, same config
 shape, no per-client integration work. On first start it also drops a
